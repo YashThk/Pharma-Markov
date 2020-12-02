@@ -1,0 +1,2 @@
+# Pharma-markov
+• Extracted data (back-end retrieval) from Informa Pharma Intelligence. (Python- requests, sys, os, json, time) • Data Manipulation for survival analysis, followed by Markov Modelling (Python - pandas, numpy, datetime) • Performed survival analysis, developed a Kaplan Meier Curves and then extended to build Markov Chain of phase transition of drugs approved in the United States, since 1990. (Survival Analysis in R - survminer, survival, ggplot2 and Markov Chain in Python - Quantecon, matplotlib)
