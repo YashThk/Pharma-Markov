@@ -1,0 +1,174 @@
+
+"""
+Created on Sat Sep 26 12:04:58 2020
+
+@author: YashThk 
+"""
+
+# informa PharmaIntelligence API Toolkit BETA
+# This toolkit is a beta version - please use at your own risk
+# Please contact PharmaAPIFeedback@informa.com with any questions 
+# All content in the informa APIs are subject to copyright
+
+import requests, sys, os, json,  time
+from datetime import date, datetime, timezone
+
+
+# optional - use config parser to store credentials
+# this example relies upon a file 'config.ini' which sits in the same directory as this script
+import configparser
+parser = configparser.ConfigParser()
+parser.read('config.ini')
+user_email = parser.get('credentials', 'username')
+user_password = parser.get('credentials', 'password')
+access_token = parser.get('credentials', 'access_token')
+
+
+def updateAccessToken():
+	print('access token getting updated')
+	authHeaders = {'Authorization': 'Basic Y3VzdG9tZXJfYXBpX2NsaWVudF9uYXRpdmU6NTIwNzhjMGItMTI5Mi00MGVhLWFkYjAtOWE4MWY4OGNjZDMy'}
+	authData = {'grant_type': 'password', 'username': user_email, 'password': user_password, 'scope': 'customer-api'}
+	r = requests.post('https://identity.pharmaintelligence.informa.com/connect/token', headers=authHeaders, data=authData)
+	res = r.json()
+	access_token = '{} {}'.format(res['token_type'], res['access_token'])
+	parser.set('credentials', 'access_token', access_token)
+	with open('config.ini', 'w') as configfile:
+		parser.write(configfile)
+	return access_token
+
+def getPaginationURLS(api, base_query, queryHeader, path):
+	#run initial query & get JSON contents
+	print(base_query)
+	print(path)
+	query = requests.get(base_query, headers=queryHeader)
+	print(query)
+	#If you are not using the configparser approach, uncomment the next If statement and avoid calling "updateAccessToken" method above
+	if ((query.status_code == 400) or (query.status_code == 401)):
+		print('need to update access_token')
+		access_token = updateAccessToken()
+		queryHeader = {'Accept': 'application/json','Authorization': access_token}
+		query = requests.get(base_query, headers=queryHeader)
+		if query.status_code != 200:
+			print("Something not working.")
+			return False
+	
+	# Convert response to json
+	res = query.json()
+	
+	# Define First record 
+	file = path + '\ + api + -export-pg-1.json'
+	
+	with open(file, 'w') as outfile:
+		# Put the first record into JSON format
+		json.dump(query.json(), outfile, separators=(', ', ': '), indent=2)
+	try: 
+		# Check if pagination exists
+		res['pagination']
+		nextPage = res['pagination']['nextPage']
+	except:
+		print('Startup Error - check credentials and auth_token')
+	
+	# We'll store each pagination block into a single array
+	myUrls = []
+	i = 0
+	print("Requests are processing now. Every API request is being copied to the output folder: ")
+	print(path) 
+	print("")
+	print("Process running - do not close this window...")
+	while nextPage:
+		i += 1
+		try: 
+			query = requests.get(nextPage, headers=queryHeader)
+			res = query.json()
+			
+			# In rare cases, you may encounter a bad response from the API server. 
+			# When this occurs, the outage is expected to be less than 5 minutes (300 seconds)
+			# The error trap below can keep your process alive for 3 attempts
+			j = 0
+			
+			while query.status_code == 500:
+				print('internal server error 500 - retrying again in 5 minutes')
+				j += 1
+				time.sleep(300)
+				print('Retrying now')
+				query = requests.get(nextPage, headers=queryHeader)
+				res = query.json()
+				if j == 3:
+					print("3 unsuccessful attempts. Shutting down now. Please contact PharmaAPIFeedback@informa.com to report an outage")
+					break
+				
+			#copy pagination files to directory with unique name			
+			paginationFile = path + '\\' + api + '-export' + "-pg-" + str(i+1) + ".json"
+			with open(paginationFile, 'w') as outfile:
+				json.dump(query.json(), outfile, separators=(', ', ': '), indent=2)
+			if not res['pagination']:
+				print('ok move on')
+			if res['pagination']:
+				nextPage = res['pagination']['nextPage']
+				myUrls.append(nextPage)
+		
+		except Exception:
+			print('ok move on')
+			base_query_count = base_query + '/count'
+			query = requests.get(base_query_count, headers=queryHeader)
+			res = query.json()
+			try:
+				numRecordsExpected = res['totalRecordCount']
+				pagesExpected = numRecordsExpected/100 + 1
+				print('Expected number of JSON: ' + str(pagesExpected) + '. Check output directory to confirm: ' + path) 
+			except Exception:
+				errorCode=0
+			break
+		
+	return myUrls
+
+
+
+if __name__ == "__main__":
+		
+	#Set which API {drug, investigator, organization, trial}
+	product = 'drug'
+	
+	#Define path for JSON Files - this path must exist before running
+	##base_path = 'C:\\Users\\cchow\\OneDrive - Informa plc\\OneDriveWorkspace\\APIOutput\\'
+	base_path = r'C:\Users\cchow\OneDrive - Informa plc\OneDriveWorkspace\APIOutput'
+    
+	# Use today's date when naming the folder to store content
+	todayUTCdate = datetime.utcnow().strftime("%Y%m%d")
+	
+	path= base_path + product + str(todayUTCdate) + '\\'
+	
+	# The next block is optional. Set to True if you want to pick up the changes from a specific date
+	# In some cases (ex/ system wide release), the number of changes equals the entire set of records. 
+	# If you are downloading for the first time, keep 'getFeedChanges = False'
+	getFeedChanges = False 
+	year = '2020'
+	month = '09'
+	day = '26'
+	date = str(year) + str(month) + str(day)
+	changeString = ""
+	changeDate = str(year) + "-" + str(month) + "-" + str(day)
+	if getFeedChanges == True:
+		changeString = "/changes?since=" + str(changeDate)
+		path= base_path + product + "Changes" + str(date) + "to" + str(todayUTCdate) + '\\'
+		
+	
+	# Whether you are picking up the changes, or getting the entire feed, make a new folder to store your output
+	if os.path.exists(path) == False:
+		try:  			
+			os.mkdir(path)
+		except OSError:  
+			print ("Creation of the directory %s failed" % path)
+		else:  
+			print ("Successfully created the directory %s " % path)
+
+	# Used in downstream processes - do not change next 2 lines
+	base_query = 'https://api.pharmaintelligence.informa.com/v1/feed/' + product + changeString
+	
+	# Note - access_token is defined as a global variable at the top of this script. 
+	queryHeader = {'Accept': 'application/json','Authorization': access_token}
+	
+	# Run the function that fetches each pagination URL and store into path
+	getPaginationURLS(product, base_query, queryHeader, path)
+	
+	print("Done")

@@ -1,0 +1,110 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Sat Oct 10 14:34:14 2020
+
+@author: HP
+"""
+import pandas as pd
+import numpy as np
+
+#Importing the raw data from csv file to pandas dataframe
+data = pd.read_csv(r'C:\Users\HP\.spyder-py3\Pharma_markov.csv', low_memory = False)
+
+#extracting year from datetime
+data['P1_year'] = pd.DatetimeIndex(data['Phase1_EventDate']).year
+data['P2_year'] = pd.DatetimeIndex(data['Phase2_EventDate']).year
+data['P3_year'] = pd.DatetimeIndex(data['Phase3_EventDate']).year
+data['PA_year'] = pd.DatetimeIndex(data['PhaseApp_EventDate']).year
+
+#setiing all unspeciifed entires to zero
+data['P1_year'][np.isnan(data['P1_year'])] = 0
+data['P2_year'][np.isnan(data['P2_year'])] = 0
+data['P3_year'][np.isnan(data['P3_year'])] = 0
+data['PA_year'][np.isnan(data['PA_year'])] = 0
+
+#chnaging the data type from float to int
+data['P1_year'] = data['P1_year'].astype(np.int64)
+data['P2_year'] = data['P2_year'].astype(np.int64)
+data['P3_year'] = data['P3_year'].astype(np.int64)
+data['PA_year'] = data['PA_year'].astype(np.int64)
+        
+#creating a dataframe             
+frame = [data['DrugID'], data['Drug_Name'], data['Phase1_EventDetails'], data['P1_year'], data['Phase2_EventDetails'], data['P2_year'], data['Phase3_EventDetails'], data['P3_year'], data['PhaseApp_EventDetails'], data['PA_year'], data['originatorCompanyKey'], data['Vaccine ?']]
+header = ['DrugID','Drug_Name', 'Phase1_EventDetails', 'P1_year', 'Phase2_EventDetails', 'P2_year', 'Phase3_EventDetails', 'P3_year', 'PhaseApp_EventDetails', 'PA_year', 'originatorCompanyKey', 'Vaccine ?']
+
+df = pd.concat(frame, axis=1, keys=header)
+
+#count the number of unique drugIDs
+uni = df['DrugID'].nunique()
+print('The number of unique DrugIDs present in the dastaset are:', uni)
+
+df['P1P2'] = data['Drug_Name']
+df['TR12'] = data['Drug_Name']
+
+df['P2P3'] = data['Drug_Name']
+df['TR23'] = data['Drug_Name']
+
+df['P3PA'] = data['Drug_Name']
+df['TR3A'] = data['Drug_Name']
+
+
+for j in range(len(data['DrugID'])):                                            #a loop through all the records of the original file(all drugs)
+    if data['P1_year'][j] != 0:                                                 #if loop to check whether phase 1 year is not equal to zero 
+        if data['P2_year'][j] != 0:                                             #if loop to check whether phase 2 year is not equal to zero 
+            df['P1P2'][j] = abs(data['P2_year'][j] - data['P1_year'][j])            #Phase 1 to 2 time calculation 
+            df['TR12'][j] = 1 
+        else:
+            df['P1P2'][j] = 2019 - data['P1_year'][j]                          #id no information is provided about phase 2 then phase 1 to 2 is culated by subtracting phase 1 year from 2019
+            df['TR12'][j] = 0                                                  #for no information provided to about phase 2, the tranistion is set to zero              
+    if data['P2_year'][j] != 0:                                                 #if loop to check whether phase 2 year is not equal to zero 
+        if data['P3_year'][j] != 0:                                             #if loop to check whether phase 3 year is not equal to zero 
+            df['P2P3'][j] = abs(data['P3_year'][j] - data['P2_year'][j])            #Phase 2 to 3 calculation 
+            df['TR23'][j] = 1              
+        else:
+            df['P2P3'][j] = 2019 - data['P2_year'][j]                          #id no information is provided about phase 3 then phase 2 to 3 is culated by subtracting phase 2 year from 2019
+            df['TR23'][j] = 0                                                  #for no information provided to about phase 3, the tranistion is set to zero 
+    if data['P3_year'][j] != 0:                                                 #if loop to check whether phase 3 year is not equal to zero 
+        if data['PA_year'][j] != 0:                                             #if loop to check whether phase approval year is not equal to zero 
+            df['P3PA'][j] = abs(data['PA_year'][j] - data['P3_year'][j])            #Phase 3 to approval calculation   
+            df['TR3A'][j] = 1                                              #transition is set to 1 for positive phase 3 to approval reading
+        else:
+            df['P3PA'][j] = 2019 - data['P3_year'][j]                          #id no information is provided about phase approval then phase 3 to approval is culated by subtracting phase 2 year from 2019
+            df['TR3A'][j] = 0                                                  #for no information provided to about phase approval, the tranistion is set to zero 
+    
+            
+df.sort_values('DrugID', inplace = True)
+df.drop_duplicates(subset ="DrugID", keep = False, inplace = True)
+
+#Uncomment the section associated with the required transition data
+
+#the onlt data that has been excluded in the process of data cleaning & manipulation for survival analysis &
+#following markov modelling is the cases where time taken by phase change is not applicable (or negetive)
+''' 
+#Transition1 : Phase 1 to Phase 2
+df1 = df[df['P1_year'] != 0]
+
+data1_2 = [df1['DrugID'], df1['Drug_Name'], df1['P1_year'], df1['P2_year'], df1['P1P2'], df1['TR12']]
+headers1_2 =['DrugID', 'Drug_Name', 'P1_year', 'P2_year', 'P1P2', 'TR12']
+df1_2 = pd.concat(data1_2, axis = 1, keys = headers1_2) 
+df1_2.to_csv('Pharma_Markov12_n.csv', index = False)
+'''
+
+'''
+#Transition2 : Phase 2 to Phase 3
+df2 = df[df['P2_year'] != 0]
+
+data2_3 = [df2['DrugID'], df2['Drug_Name'], df2['P2_year'], df2['P3_year'], df2['P2P3'], df2['TR23']]
+headers2_3 =['DrugID', 'Drug_Name', 'P2_year', 'P3_year', 'P2P3', 'TR23']
+df2_3 = pd.concat(data2_3, axis = 1, keys = headers2_3) 
+df2_3.to_csv('Pharma_Markov23_n.csv', index = False)
+'''
+
+'''
+#Transition3 : Phase 3 to Phase A
+df3 = df[df['P3_year'] != 0]
+
+data3_A = [df3['DrugID'], df3['Drug_Name'], df3['P3_year'], df3['PA_year'], df3['P3PA'], df3['TR3A']]
+headers3_A =['DrugID', 'Drug_Name', 'P3_year', 'PA_year', 'P3PA', 'TR3A']
+df3_A = pd.concat(data3_A, axis = 1, keys = headers3_A)
+df3_A.to_csv('Pharma_Markov3a_n.csv', index = False)
+'''
